@@ -22,35 +22,33 @@ Dialog DLL:      TCM.DLL V1.56.6.0
  
 <h2>Project:</h2>
 e:\2025smartcar\AxDr_L-main\AxDr_L-main\VFcontrol\MDK-ARM\AxDrFOC_G431.uvprojx
-Project File Date:  03/02/2026
+Project File Date:  03/10/2026
 
 <h2>Output:</h2>
 *** Using Compiler 'V5.06 update 6 (build 750)', folder: 'D:\keil_v5\MDK\ARM\ARMCC\Bin'
 Build target 'AxDrFOC_G431'
 compiling foc_drv.c...
-..\User\motor\foc_drv.c(475): warning:  #177-D: variable "Tmindiv2"  was declared but never referenced
+..\User\motor\foc_drv.c(486): warning:  #177-D: variable "Tmindiv2"  was declared but never referenced
       const int16_t Tmindiv2    = (int16_t)(0.5f * Tmin);
-..\User\motor\foc_drv.c(1465): warning:  #550-D: variable "id_ref"  was set but never used
-          float theta, id_ref, iq_ref;
-..\User\motor\foc_drv.c(105): warning:  #177-D: function "foc_clamp_f32"  was declared but never referenced
+..\User\motor\foc_drv.c(110): warning:  #177-D: function "foc_clamp_f32"  was declared but never referenced
   static float foc_clamp_f32(float in, float low, float high)
-..\User\motor\foc_drv.c(112): warning:  #177-D: function "foc_clamp_u16"  was declared but never referenced
+..\User\motor\foc_drv.c(117): warning:  #177-D: function "foc_clamp_u16"  was declared but never referenced
   static uint16_t foc_clamp_u16(int32_t val, uint16_t low, uint16_t high)
-..\User\motor\foc_drv.c(119): warning:  #177-D: function "foc_clamp_i32"  was declared but never referenced
+..\User\motor\foc_drv.c(124): warning:  #177-D: function "foc_clamp_i32"  was declared but never referenced
   static int32_t foc_clamp_i32(int32_t val, int32_t low, int32_t high)
-..\User\motor\foc_drv.c: 5 warnings, 0 errors
+..\User\motor\foc_drv.c: 4 warnings, 0 errors
 linking...
-Program Size: Code=41090 RO-data=602 RW-data=416 ZI-data=8256  
+Program Size: Code=42624 RO-data=600 RW-data=416 ZI-data=8296  
 FromELF: creating hex file...
-"AxDrFOC_G431\AxDrFOC_G431.axf" - 0 Error(s), 5 Warning(s).
+"AxDrFOC_G431\AxDrFOC_G431.axf" - 0 Error(s), 4 Warning(s).
 
 <h2>Software Packages used:</h2>
 
 Package Vendor: ARM
-                http://www.keil.com/pack/ARM.CMSIS.5.6.0.pack
-                ARM::CMSIS@5.6.0
-                CMSIS (Cortex Microcontroller Software Interface Standard)
-   * Component: CORE Version: 5.3.0
+                http://www.keil.com/pack/ARM.CMSIS.5.9.0.pack
+                ARM::CMSIS@5.9.0
+                CMSIS (Common Microcontroller Software Interface Standard)
+   * Component: CORE Version: 5.6.0
 
 Package Vendor: Keil
                 https://www.keil.com/pack/Keil.STM32G4xx_DFP.2.1.0.pack
@@ -59,11 +57,12 @@ Package Vendor: Keil
 
 <h2>Collection of Component include folders:</h2>
   ./RTE/_AxDrFOC_G431
-  D:/keil_v5/MDK/ARM/PACK/ARM/CMSIS/5.6.0/CMSIS/Core/Include
+  D:/keil_v5/MDK/ARM/PACK/ARM/CMSIS/5.9.0/CMSIS/Core/Include
 
 <h2>Collection of Component Files used:</h2>
 
-   * Component: ARM::CMSIS:CORE@5.3.0
+   * Component: ARM::CMSIS:CORE@5.6.0
+      Include file:  CMSIS/Core/Include/tz_context.h
 Build Time Elapsed:  00:00:02
 </pre>
 </body>

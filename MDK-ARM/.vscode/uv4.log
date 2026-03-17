@@ -1,19 +1,2 @@
-*** Using Compiler 'V5.06 update 6 (build 750)', folder: 'D:\keil_v5\MDK\ARM\ARMCC\Bin'
-Build target 'AxDrFOC_G431'
-compiling foc_drv.c...
-..\User\motor\foc_drv.c(475): warning:  #177-D: variable "Tmindiv2"  was declared but never referenced
-      const int16_t Tmindiv2    = (int16_t)(0.5f * Tmin);
-..\User\motor\foc_drv.c(1465): warning:  #550-D: variable "id_ref"  was set but never used
-          float theta, id_ref, iq_ref;
-..\User\motor\foc_drv.c(105): warning:  #177-D: function "foc_clamp_f32"  was declared but never referenced
-  static float foc_clamp_f32(float in, float low, float high)
-..\User\motor\foc_drv.c(112): warning:  #177-D: function "foc_clamp_u16"  was declared but never referenced
-  static uint16_t foc_clamp_u16(int32_t val, uint16_t low, uint16_t high)
-..\User\motor\foc_drv.c(119): warning:  #177-D: function "foc_clamp_i32"  was declared but never referenced
-  static int32_t foc_clamp_i32(int32_t val, int32_t low, int32_t high)
-..\User\motor\foc_drv.c: 5 warnings, 0 errors
-linking...
-Program Size: Code=41090 RO-data=602 RW-data=416 ZI-data=8256  
-FromELF: creating hex file...
-"AxDrFOC_G431\AxDrFOC_G431.axf" - 0 Error(s), 5 Warning(s).
-Build Time Elapsed:  00:00:02
+Load "AxDrFOC_G431\\AxDrFOC_G431.axf" 
+Erase Done.Programming Done.Verify OK.Flash Load finished at 23:07:43

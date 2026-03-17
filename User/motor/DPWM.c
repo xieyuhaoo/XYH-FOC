@@ -5,7 +5,7 @@
 _RAM_FUNC void DPWM_schedule_update(pmsm_t *pm)
 {
     const int16_t arr      = (int16_t)PWM_ARR();
-    const int16_t Tmin     = (int16_t)500;//设置最小采样窗口
+    const int16_t Tmin     = (int16_t)600;//设置最小采样窗口
     const int16_t Tmindiv2    = (int16_t)(0.5f * Tmin);
     const int32_t Tuplimit   = arr - 1;   /* CCR 上限 (对应TI Tuplimit) */
     const int32_t Tdownlimit = 1;         /* CCR 下限 (对应TI Tdownlimit) */

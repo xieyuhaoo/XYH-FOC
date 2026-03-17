@@ -3,7 +3,7 @@
  * @brief   FOC 控制层: HAL中断回调 + 状态机 + 运行模式
  * @details
  *   HAL_ADCEx_InjectedConvCpltCallback  → 单电阻双采样存储
- *   HAL_TIM_PeriodElapsedCallback       → TIM1(20kHz电流环) / TIM3(1kHz速度环)
+ *   HAL_TIM_PeriodElapsedCallback       → TIM1(10kHz电流环) / TIM3(1kHz速度环)
  *   pmsm_state_ctrl                     → 状态机 (start/opera/reset)
  *   force_curr_mode                     → 强拖启动 + SMO切换
  */
@@ -83,7 +83,7 @@ _RAM_FUNC void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         }
 #endif
 
-        /* 20kHz FOC 调度 (上溢+下溢各一次) */
+        /* 10kHz FOC 调度 (上溢+下溢各一次) */
         foc_tim1_update_isr(&pm);
          vofa_start();     /* USB CDC -> VOFA+ JustFloat, ~100Hz */
     }

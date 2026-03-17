@@ -60,9 +60,10 @@ typedef __IO uint8_t  vu8;
 #define wrap_pm_pi(theta)                          \
     theta = (theta > M_PI)  ? theta - M_2PI : theta; \
     theta = (theta < -M_PI) ? theta + M_2PI : theta;
-#define wrap_0_2pi(theta)                          \
-    theta = (theta > M_2PI) ? theta - M_2PI : theta; \
-    theta = (theta < 0.0f)  ? theta + M_2PI : theta;
+#define wrap_0_2pi(theta)  do {                     \
+    theta = fmodf(theta, M_2PI);                      \
+    if (theta < 0.0f) theta += M_2PI;                 \
+} while(0)
 
 /* ======================== 数学常量 ======================== */
 #define M_PI             (3.14159265358f)
@@ -346,11 +347,23 @@ typedef struct
     float we_pll;       /* PLL 输出电角速度 rad/s */
 
     /* 输出 */
-    float pos_e;        /* 估算电角度 rad (PLL输出) */
+    float pos_e_raw;    /* PLL 原始积分角 rad (不含补偿) */
+    float pos_e;        /* 控制使用电角度 rad (含补偿) */
     float we_est;       /* 估算电角速度 rad/s (= we_pll) */
 
     float ts;           /* 采样周期 */
     float fs;           /* 采样频率 */
+    float i_err_a;     /* 当前采样的电流估算误差 */
+    float i_err_b;   /* 当前采样的电流估算误差 */
+
+    /* ── 调试变量 (VOFA+ 观察用) ── */
+    float dbg_ks;         /* 本拍实际使用的滑模增益 (V) */
+    float dbg_Emag;       /* 补偿后 BEMF 幅值 (V) */
+    float dbg_comp_deg;   /* 相位补偿角 (度) */
+    float dbg_pll_err;    /* PLL 归一化误差 (-1~+1) */
+    float dbg_theta_atan; /* atan2 参考角度 rad (不用于控制) */
+    float dbg_Ea_comp;    /* 补偿后 Eα (V) */
+    float dbg_Eb_comp;    /* 补偿后 Eβ (V) */
 } esmo_t;
 
 /* ======================== PMSM 总控制结构体 ======================== */

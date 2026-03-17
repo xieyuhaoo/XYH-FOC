@@ -46,7 +46,7 @@ void MX_TIM1_Init(void)
   htim1.Instance = TIM1;
   htim1.Init.Prescaler = 0;
   htim1.Init.CounterMode = TIM_COUNTERMODE_CENTERALIGNED3;
-  htim1.Init.Period = 3999;
+  htim1.Init.Period = 7999;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
@@ -100,7 +100,7 @@ void MX_TIM1_Init(void)
   sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
   sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
   sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
-  sBreakDeadTimeConfig.DeadTime = 80;
+  sBreakDeadTimeConfig.DeadTime = 100;
   sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
   sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
   sBreakDeadTimeConfig.BreakFilter = 0;
@@ -118,7 +118,7 @@ void MX_TIM1_Init(void)
   /*
    * CH4/CH6 保持 PWM Mode 1 (与 CH1-3 一致, CubeMX 已配置)
    *
-   * 中心对齐模式下 PWM Mode 1:
+   * 中心对齐模式下 PWM Mode 2:
    *   下计数穿越 CCRx 时: OCxREF 产生 **上升沿**  ← 触发 ADC
    *   上计数穿越 CCRx 时: OCxREF 产生 下降沿      ← 不触发
    *

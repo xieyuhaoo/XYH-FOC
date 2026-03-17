@@ -32,36 +32,49 @@ extern uint16_t adc2_buff[4];
  */
 void vofa_start(void)
 {
-	vofa_send_data(0,  pm.foc.i_d);
-	vofa_send_data(1,  pm.foc.i_q);
-	// vofa_send_data(2,  pm.foc.v_d);
-	// vofa_send_data(3,  pm.foc.v_q);
-	// vofa_send_data(4,  pm.id_pi.i_term);
-	// vofa_send_data(5,  pm.id_pi.out_value);
-	vofa_send_data(6,  pm.foc.arr1_up);
-	vofa_send_data(7,  pm.foc.arr2_up);
-	vofa_send_data(8,  pm.foc.arr3_up);
-	// vofa_send_data(9,  pm.foc.theta);
-	// vofa_send_data(10, (float)pm.period.start_cnt);
-	// vofa_send_data(11, pm.foc.i_shunt_1);
-	// vofa_send_data(12, pm.foc.i_shunt_2);
-	// vofa_send_data(13, pm.foc.v_alph);
-	// vofa_send_data(14, pm.foc.v_beta);
-	// vofa_send_data(15, pm.foc.vbus);
-	vofa_send_data(16, pm.foc.i_a);
-	vofa_send_data(17, pm.foc.i_b);
-	vofa_send_data(18, pm.foc.i_c);
-	// vofa_send_data(22, (float)pm.foc.shunt_case);//移相采样标志
-	// vofa_send_data(23, (float)pm.foc.svm_sector);
-	// vofa_send_data(0, pm.foc.i_alph);
-	// vofa_send_data(1, pm.foc.i_beta);
-	// vofa_send_data(2, pm.esmo.Ealph);
-	// vofa_send_data(3, pm.esmo.Ebeta);
-	vofa_send_data(4, pm.esmo.pos_e);
-	vofa_send_data(5, pm.ctrl.drag_pe);
-	// vofa_send_data(6, pm.esmo.we_pll);
-	vofa_send_data(9, (float)pm.foc.shunt_case);//移相采样标志
-	vofa_send_data(10, (float)pm.foc.svm_sector*10);
+	/* ── SMO 调试通道 (JustFloat: 按调用顺序排列) ──
+	 *   CH0:  i_alph          α轴实际电流 (A)
+	 *   CH1:  EstIalph        α轴估算电流 (A) → 与CH0重合=观测器收敛
+	 *   CH2:  i_err_a         α轴电流误差 → 应在0附近小幅抖动
+	 *   CH3:  Ealph           LPF后α轴BEMF (V) → 正弦波
+	 *   CH4:  Ebeta           LPF后β轴BEMF (V) → 与CH3正交
+	 *   CH5:  dbg_Emag        BEMF幅值 (V) → 随转速线性增大
+	 *   CH6:  dbg_theta_atan  atan2角度 (rad) → 调试参考
+	 *   CH7:  角度             IF=drag_pe, 闭环=pos_e
+	 *   CH8:  we_pll          PLL电角速度 (rad/s)
+	 *   CH9:  dbg_pll_err     PLL归一化误差 → 锁定后趋近0
+	 *   CH10: run_stage       0=对齐 1=IF 2=闭环
+	 *   CH11: dbg_ks          当拍滑模增益 (V)
+	 */
+	vofa_send_data(0,  pm.foc.i_a*500);
+	vofa_send_data(1,  pm.foc.i_b*500);
+	vofa_send_data(2,  pm.foc.i_c*500);
+
+	vofa_send_data(3,  pm.foc.i_shunt_1);
+	vofa_send_data(4,  pm.foc.i_shunt_2);
+
+	vofa_send_data(5, pm.ctrl.iq_set);
+	vofa_send_data(6,  pm.foc.i_q);
+	vofa_send_data(7,  pm.foc.i_d);
+	vofa_send_data(8,  pm.esmo.we_pll);
+	vofa_send_data(9,  pm.esmo.dbg_pll_err);
+
+
+	vofa_send_data(10,  pm.esmo.Ealph);
+	vofa_send_data(11,  pm.esmo.Ebeta);
+	vofa_send_data(12,  pm.esmo.dbg_Emag);
+
+	vofa_send_data(13,  pm.esmo.we_pll);
+	vofa_send_data(14,  pm.esmo.dbg_pll_err);
+	vofa_send_data(15, pm.esmo.dbg_ks);
+	
+	vofa_send_data(16,  pm.esmo.dbg_theta_atan);
+	vofa_send_data(17, pm.esmo.pos_e);
+	vofa_send_data(18, pm.ctrl.drag_pe);
+	vofa_send_data(19, pm.foc.shunt_case*1000);
+	vofa_send_data(20, pm.foc.svm_sector*500);
+	vofa_send_data(21, pm.ctrl.iq_set);
+	vofa_send_data(22, pm.esmo.dbg_comp_deg);
 	vofa_sendframetail();
 }
 

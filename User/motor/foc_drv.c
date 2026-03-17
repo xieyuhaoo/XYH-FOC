@@ -96,6 +96,11 @@
 #include "common.h"
 #include "modlue.h"
 
+/* IF开环到SMO闭环切换参数 */
+#define IF_ALIGN_CNT  500U
+#define IF_TOTAL_CNT  10000U
+#define IF_WE_MIN     0.0f
+
 /* ======================== 全局实例 ======================== */
 _RAM_DATA pmsm_t pm;
 
@@ -128,7 +133,7 @@ static int32_t foc_clamp_i32(int32_t val, int32_t low, int32_t high)
  * ================================================================ */
 static float foc_pi_run(pid_para_t *pi, float ref, float fbk)
 {
-    float err = ref - fbk;
+    float  err = ref - fbk;
     pi->p_term  = pi->kp * err;
     pi->i_term += pi->ki * pi->ts * err;
     MIN_MAX_LIMT(pi->i_term, pi->i_term_min, pi->i_term_max);
@@ -165,10 +170,10 @@ void pmsm_board_init(void)
  * ================================================================ */
 static void pmsm_motor_init(void)
 {
-    pm.para.pn   = 6;
-    pm.para.Rs   = 0.202977806f;
-    pm.para.Ld   = 0.000108778855f;
-    pm.para.Lq   = 0.000112416135f;
+    pm.para.pn   = 7.0f;       /* 极对数 */
+    pm.para.Rs   = 0.302977806f;
+    pm.para.Ld   = 0.0003608778855f;
+    pm.para.Lq   = 0.0003612416135f;
     pm.para.Ls   = 0.000110597495f;
     pm.para.Ldif = 3.63728032e-06f;
     pm.para.flux = 0.006488f;
@@ -176,7 +181,7 @@ static void pmsm_motor_init(void)
     pm.para.Js   = 9.08865259e-05f;
 
     pm.para.Gr    = 1.0f;
-    pm.para.ibw   = 300.0f;    /* 单电阻重构噪声大, 降低带宽 1000→300 */
+    pm.para.ibw   = 1000.0f;    /* 单电阻重构噪声大, 降低带宽 1000→300 */
     pm.para.delta = 4.0f;
 
     pm.para.div_pn  = 1.0f / pm.para.pn;
@@ -197,10 +202,10 @@ static void pmsm_motor_init(void)
  * ================================================================ */
 static void pmsm_period_init(void)
 {
-    pm.period.foc_fs     = 20000.0f;
+    pm.period.foc_fs     = 10000.0f;
     pm.period.foc_ts     = 1.0f / pm.period.foc_fs;
 
-    pm.period.cur_pid_fs = 20000.0f;
+    pm.period.cur_pid_fs = 10000.0f;
     pm.period.cur_pid_ts = 1.0f / pm.period.cur_pid_fs;
 
     /* 速度环由 TIM3 1kHz 中断驱动，不再在 FOC ISR 中计数分频 */
@@ -253,11 +258,13 @@ void pmsm_init(void)
     pm.iq_pi.i_term_min = -pm.foc.vs;
 
     /* 速度 PI */
-    pm.spd_pi.kp = (pm.para.Js * 100.0f) * pm.para.div_Kt;
-    pm.spd_pi.ki = (pm.para.B  * 100.0f) * pm.para.div_Kt;
+    // pm.spd_pi.kp = (pm.para.Js *50.0f) * pm.para.div_Kt;
+    // pm.spd_pi.ki = (pm.para.B  * 0.0f) * pm.para.div_Kt;
+    pm.spd_pi.kp = 0.005; /* 速度环初始较小的 PI 参数, 后续调试再调整 */
+    pm.spd_pi.ki = 0.002f;
     pm.spd_pi.ts = pm.period.spd_pid_ts;
-    pm.spd_pi.i_term_max =  8.0f;
-    pm.spd_pi.i_term_min = -8.0f;
+    pm.spd_pi.i_term_max =  4.0f;
+    pm.spd_pi.i_term_min = -4.0f;
 
     /* 控制初始值 */
     pm.ctrl.id_set = 0.0f;
@@ -265,7 +272,7 @@ void pmsm_init(void)
     pm.ctrl.iq_lim = 8.0f;
     pm.ctrl.id_if  = 1.5f;    /* IF启动时d轴励磁电流 A */
     pm.ctrl.iq_if  = 2.0f;    /* IF爬速时q轴拖动电流 A */
-    pm.ctrl.wr_set = 30.0f;
+    pm.ctrl.wr_set = 100.0f;
     pm.ctrl.vd_set = 0.0f;
     pm.ctrl.vq_set = 1.0f;   /* 仅V/f模式备用, IF阶段已改为电流PI */
     pm.ctrl.wm_acc = 200.0f;
@@ -286,11 +293,11 @@ void pmsm_init(void)
  * ================================================================ */
 void pmsm_power_on_autostart(pmsm_t *pm)
 {
-    pm->ctrl.id_set = 0.3f;
-    pm->ctrl.id_if  = 0.0f;   /* IF对齐/爬速 d轴电流 A */
-    pm->ctrl.iq_if  = 2.0f;   /* IF爬速 q轴拖动电流 A */
-    pm->ctrl.iq_lim = 4.0f;
-    pm->ctrl.wr_set = 30.0f;
+    pm->ctrl.id_set = 0.0f;
+    pm->ctrl.id_if  = 1.0f;   /* IF对齐 d轴锁转子电流 A */
+    pm->ctrl.iq_if  = 2.5f;   /* IF爬速 q轴拖动电流 A */
+    pm->ctrl.iq_lim = 6.0f;
+    pm->ctrl.wr_set = 200.0f;
 
     pm->period.start_cnt = 0U;
 
@@ -431,21 +438,25 @@ _RAM_FUNC static void foc_reconstruct_current(pmsm_t *pm, float i1, float i2)
     
         switch (sector)
         {
-        case 3:  ia =  i1; ic = -i2; ib = (-i1 + i2); break;
-        case 1:  ib =  i1; ic = -i2; ia = (-i1 + i2); break;
-        case 5:  ib =  i1; ia = -i2; ic = (-i1 + i2); break;
-        case 4:  ic =  i1; ia = -i2; ib = (-i1 + i2); break;
-        case 6:  ic =  i1; ib = -i2; ia = (-i1 + i2); break;
-        case 2:  ia =  i1; ib = -i2; ic = (-i1 + i2); break;
+        case 3:  ia =  i1; ic = -i2; ib = (-ia - ic); break;
+        case 1:  ib =  i1; ic = -i2; ia = (-ib - ic); break;
+        case 5:  ib =  i1; ia = -i2; ic = (-ib - ia); break;
+        case 4:  ic =  i1; ia = -i2; ib = (-ic - ia); break;
+        case 6:  ic =  i1; ib = -i2; ia = (-ic - ib); break;
+        case 2:  ia =  i1; ib = -i2; ic = (-ia - ib); break;
         }
     
-
-
+        ia*= pm->board.i_ratio;
+        ib*= pm->board.i_ratio;
+        ic*= pm->board.i_ratio;
     /* 一阶低通滤波 (单电阻重构必须启用, 否则PI震荡) */
     float lp = pm->foc.shunt_lpf_alpha;
     pm->foc.i_a += lp * (ia - pm->foc.i_a);
     pm->foc.i_b += lp * (ib - pm->foc.i_b);
     pm->foc.i_c += lp * (ic - pm->foc.i_c);
+    // pm->foc.i_a = ia;  /* 直接赋值不滤波, 观察原始重构值的波动情况 */
+    // pm->foc.i_b = ib;  /* 直接赋值不滤波, 观察原始重构值的波动情况 */
+    // pm->foc.i_c = ic;  /* 直接赋值不滤波, 观察原始重构值的波动情况 */
 }
 
 /* ================================================================
@@ -471,10 +482,12 @@ _RAM_FUNC static void foc_reconstruct_current(pmsm_t *pm, float i1, float i2)
 _RAM_FUNC void foc_single_shunt_schedule_update(pmsm_t *pm)
 {
     const int16_t arr      = (int16_t)PWM_ARR();
-    const int16_t Tmin     = (int16_t)600;
+    const int16_t Tmin     = (int16_t)1000;
     const int16_t Tmindiv2    = (int16_t)(0.5f * Tmin);
     const int32_t Tuplimit   = arr - 1;   /* CCR 上限 (对应TI Tuplimit) */
     const int32_t Tdownlimit = 1;         /* CCR 下限 (对应TI Tdownlimit) */
+    const int16_t trigoff = 10;
+    const int16_t deadtime = 0;
     int16_t Ton1U ; 
     int16_t Ton2U ;
     int16_t Ton3U ;
@@ -499,7 +512,7 @@ _RAM_FUNC void foc_single_shunt_schedule_update(pmsm_t *pm)
     int Sextant;
     float tmp1 = beta;
     float tmp2 = -0.5f * beta + SQRT3_BY_2 * alpha;
-    float tmp3 = -tmp2 - tmp1;
+    float tmp3 = -0.5f * beta - SQRT3_BY_2 * alpha;
 
     if (tmp3 > 0.0f)
     {
@@ -519,8 +532,8 @@ _RAM_FUNC void foc_single_shunt_schedule_update(pmsm_t *pm)
     {
     case 3:
     {
-        t1 = (int16_t)( -Z );
-        t2 = (int16_t)( X );
+        t1 = (int16_t)( -Z )+deadtime;
+        t2 = (int16_t)( X )+deadtime;
         tA = (int16_t)(( arr - t1 - t2) * 0.5f);
         tB = (int16_t)(tA + t1);
         tC = (int16_t)(tB + t2);
@@ -534,6 +547,10 @@ _RAM_FUNC void foc_single_shunt_schedule_update(pmsm_t *pm)
         {
             Ton3U=tB+Tmin;//调整第一阶段：仅调整C相，
             Ton3D=2*tC-Ton3U;
+            Ton2U= tB;
+            Ton2D= tB;
+            Ton1U= (int16_t)(tA);
+            Ton1D= (int16_t)(tA);
             pm->foc.shunt_case = 1;
             if(Ton3U>Tuplimit)//C相调整后仍不足，进入第二阶段：调整B相
             {
@@ -560,6 +577,10 @@ _RAM_FUNC void foc_single_shunt_schedule_update(pmsm_t *pm)
         {
             Ton1U=tB-Tmin;//Stage1: 仅调整A相下移
             Ton1D=2*tA-Ton1U;  /* FIX: A相中心=tA,原2*tB错误 */
+            Ton2U=tB;
+            Ton2D=tB;
+            Ton3U=tC;
+            Ton3D=tC;
             pm->foc.shunt_case = 1;
             if(Ton1U<Tdownlimit)//A相调整后仍不足，进入第二阶段：调整C相
             {
@@ -593,47 +614,48 @@ _RAM_FUNC void foc_single_shunt_schedule_update(pmsm_t *pm)
             { 
                 Ton1U=Tdownlimit;
                 Ton1D=2*tA-Ton1U;
-                // Ton2U=Tmin;//调整B相
-                // Ton2D=2*tB-Ton2U;
-                // Ton3U=2*Tmin;//调整C相
-                // Ton3D=2*tC-Ton3U;
-                // if(Ton2D<Tdownlimit)
-                // {
-                //     Ton2D=Tdownlimit;
-                // }
-                // if(Ton3D<Tdownlimit)
-                // {
-                //     Ton3D=Tdownlimit;
-                //     Ton3D=2*tC-Ton3U;
-                // }
+                Ton2U=Tmin;//调整B相
+                Ton2D=2*tB-Ton2U;
+                Ton3U=2*Tmin;//调整C相
+                Ton3D=2*tC-Ton3U;
+                if(Ton2D<Tdownlimit)
+                {
+                    Ton2D=Tdownlimit;
+                }
+                if(Ton3D<Tdownlimit)
+                {
+                    Ton3D=Tdownlimit;
+                    Ton3D=2*tC-Ton3U;
+                }
+                pm->foc.shunt_case = 5;
             }
             if(Ton3U>Tuplimit)
             {
                 Ton3U=Tuplimit;
                 Ton3D=2*tC-Ton3U;
-                // Ton2U=Tuplimit-Tmin;//调整B相
-                // Ton2D=2*tB-Ton2U;
-                // Ton1U=Tuplimit-2*Tmin;//调整A相
-                // Ton1D=2*tA-Ton1U;
-                // if(Ton2D>Tuplimit)
-                // {
-                //     Ton2D=Tuplimit;
-                // }
-                // if (Ton1D > Tuplimit)
-                // {
-                //     Ton1D=Tuplimit;
-                // }
-                
+                Ton2U=Tuplimit-Tmin;//调整B相
+                Ton2D=2*tB-Ton2U;
+                Ton1U=Tuplimit-2*Tmin;//调整A相
+                Ton1D=2*tA-Ton1U;
+                if(Ton2D>Tuplimit)
+                {
+                    Ton2D=Tuplimit;
+                }
+                if (Ton1D > Tuplimit)
+                {
+                    Ton1D=Tuplimit;
+                }
+                pm->foc.shunt_case = 6;
 
             }
         }
-        trig1=(Ton1U+Ton2U)/2;
-        trig2=(Ton3U+Ton2U)/2;
+        trig1=(Ton1U+Ton2U)/2+trigoff;
+        trig2=(Ton3U+Ton2U)/2+trigoff;
     } break;
     case 1:
     {
-        t1 = (int16_t)( Z );
-        t2 = (int16_t)( Y );
+        t1 = (int16_t)( Z )+deadtime;
+        t2 = (int16_t)( Y )+deadtime;
         tB = ( arr - t1 - t2) * 0.5f;
         tA = tB + t1;
         tC = tA + t2;
@@ -704,44 +726,46 @@ _RAM_FUNC void foc_single_shunt_schedule_update(pmsm_t *pm)
             {
                 Ton2U=Tdownlimit;
                 Ton2D=2*tB-Ton2U;
-                // Ton1U=Tmin;//调整A相
-                // Ton1D=2*tA-Ton1U;  
-                // Ton3U=Tmin;//调整C相
-                // Ton3D=2*tC-Ton3U;
-                // if(Ton3D<Tdownlimit)
-                // {
-                //     Ton3D=Tdownlimit;
-                // }
-                // if(Ton1D<Tdownlimit)
-                // {
-                //     Ton1D=Tdownlimit;
-                // }
+                Ton1U=Tmin;//调整A相
+                Ton1D=2*tA-Ton1U;  
+                Ton3U=Tmin;//调整C相
+                Ton3D=2*tC-Ton3U;
+                if(Ton3D<Tdownlimit)
+                {
+                    Ton3D=Tdownlimit;
+                }
+                if(Ton1D<Tdownlimit)
+                {
+                    Ton1D=Tdownlimit;
+                }
+                pm->foc.shunt_case = 5;
             }
             if(Ton3U>Tuplimit)
             {
                 Ton3U=Tuplimit;
                 Ton3D=2*tC-Ton3U;
-                // Ton1U=Tuplimit-Tmin;//调整B相
-                // Ton1D=2*tA-Ton1U;
-                // Ton2U=Tuplimit-2*Tmin;//调整A相
-                // Ton2D=2*tB-Ton2U;
-                // if(Ton1D>Tuplimit)
-                // {
-                //     Ton1D=Tuplimit;
-                // }
-                // if(Ton2D>Tuplimit)
-                // {
-                //     Ton2D=Tuplimit;
-                // }
+                Ton1U=Tuplimit-Tmin;//调整B相
+                Ton1D=2*tA-Ton1U;
+                Ton2U=Tuplimit-2*Tmin;//调整A相
+                Ton2D=2*tB-Ton2U;
+                if(Ton1D>Tuplimit)
+                {
+                    Ton1D=Tuplimit;
+                }
+                if(Ton2D>Tuplimit)
+                {
+                    Ton2D=Tuplimit;
+                }
+                pm->foc.shunt_case = 6;
             }
          }
-        trig1=(Ton2U+Ton1U)/2;
-        trig2=(Ton3U+Ton1U)/2;
+        trig1=(Ton2U+Ton1U)/2+trigoff;
+        trig2=(Ton3U+Ton1U)/2+trigoff;
     } break;
     case 5:
     {
-        t1 = (int16_t)(X);
-        t2 = (int16_t)(-Y);
+        t1 = (int16_t)(X)+deadtime;
+        t2 = (int16_t)(-Y)+deadtime;
         tB = ( arr - t1 - t2) * 0.5f;
         tC = tB + t1;
         tA = tC + t2;
@@ -812,44 +836,46 @@ _RAM_FUNC void foc_single_shunt_schedule_update(pmsm_t *pm)
             {
                 Ton2U=Tdownlimit;
                 Ton2D=2*tB-Ton2U;  /* FIX */
-                // Ton3U=Tmin;//调整C相为Tmin创建窗口
-                // Ton3D=2*tC-Ton3U;  /* FIX */
-                // Ton1U=2*Tmin;//调整A相为2Tmin创建窗口
-                // Ton1D=2*tA-Ton1U;  /* FIX */
-                // if(Ton1D<Tdownlimit)
-                // {
-                //     Ton1D=Tdownlimit;
-                // }
-                // if(Ton3D<Tdownlimit)
-                // {
-                //     Ton3D=Tdownlimit;
-                // }
+                Ton3U=Tmin;//调整C相为Tmin创建窗口
+                Ton3D=2*tC-Ton3U;  /* FIX */
+                Ton1U=2*Tmin;//调整A相为2Tmin创建窗口
+                Ton1D=2*tA-Ton1U;  /* FIX */
+                if(Ton1D<Tdownlimit)
+                {
+                    Ton1D=Tdownlimit;
+                }
+                if(Ton3D<Tdownlimit)
+                {
+                    Ton3D=Tdownlimit;
+                }
+                pm->foc.shunt_case = 5;
             }
             if(Ton1U>Tuplimit)
             {
                 Ton1U=Tuplimit;
                 Ton1D=2*tA-Ton1U;  /* FIX */
-                // Ton3U=Tuplimit-Tmin;//调整C相
-                // Ton3D=2*tC-Ton3U;  /* FIX */
-                // Ton2U=Tuplimit-2*Tmin;//调整B相
-                // Ton2D=2*tB-Ton2U;  /* FIX */
-                // if(Ton2D>Tuplimit)
-                // {
-                //     Ton2D=Tuplimit;
-                // }
-                // if(Ton3D>Tuplimit)
-                // {
-                //     Ton3D=Tuplimit;
-                // }
+                Ton3U=Tuplimit-Tmin;//调整C相
+                Ton3D=2*tC-Ton3U;  /* FIX */
+                Ton2U=Tuplimit-2*Tmin;//调整B相
+                Ton2D=2*tB-Ton2U;  /* FIX */
+                if(Ton2D>Tuplimit)
+                {
+                    Ton2D=Tuplimit;
+                }
+                if(Ton3D>Tuplimit)
+                {
+                    Ton3D=Tuplimit;
+                }
+                pm->foc.shunt_case = 6;
             }
          }
-        trig1=(Ton2U+Ton3U)/2;
-        trig2=(Ton3U+Ton1U)/2;
+        trig1=(Ton2U+Ton3U)/2+trigoff;
+        trig2=(Ton3U+Ton1U)/2+trigoff;
     } break;
     case 4:
     {
-        t1 = (int16_t)(-X);
-        t2 = (int16_t)(Z);
+        t1 = (int16_t)(-X)+deadtime;
+        t2 = (int16_t)(Z)+deadtime;
         tC = ( arr - t1 - t2) * 0.5f;
         tB = tC + t1;
         tA = tB + t2;
@@ -922,44 +948,46 @@ _RAM_FUNC void foc_single_shunt_schedule_update(pmsm_t *pm)
             {
                 Ton3U=Tdownlimit;
                 Ton3D=2*tC-Ton3U;
-                // Ton2U=Tmin;//调整B相
-                // Ton2D=2*tB-Ton2U;
-                // Ton1U=2*Tmin;//调整A相
-                // Ton1D=2*tA-Ton1U;
-                // if(Ton1D<Tdownlimit)
-                // {
-                //     Ton1D=Tdownlimit;
-                // }
-                // if(Ton2D<Tdownlimit)
-                // {
-                //     Ton2D=Tdownlimit;
-                // }
+                Ton2U=Tmin;//调整B相
+                Ton2D=2*tB-Ton2U;
+                Ton1U=2*Tmin;//调整A相
+                Ton1D=2*tA-Ton1U;
+                if(Ton1D<Tdownlimit)
+                {
+                    Ton1D=Tdownlimit;
+                }
+                if(Ton2D<Tdownlimit)
+                {
+                    Ton2D=Tdownlimit;
+                }
+                pm->foc.shunt_case = 5;
             }
             if(Ton1U>Tuplimit)
             {
                 Ton1U=Tuplimit;
                 Ton1D=2*tA-Ton1U;
-                // Ton2U=Tuplimit-Tmin;//调整B相
-                // Ton2D=2*tB-Ton2U;
-                // Ton3U=Tuplimit-2*Tmin;//调整C相
-                // Ton3D=2*tC-Ton3U;
-                // if(Ton2D>Tuplimit)
-                // {
-                //     Ton2D=Tuplimit;
-                // }
-                // if(Ton3D>Tuplimit)
-                // {
-                //     Ton3D=Tuplimit;
-                // }
+                Ton2U=Tuplimit-Tmin;//调整B相
+                Ton2D=2*tB-Ton2U;
+                Ton3U=Tuplimit-2*Tmin;//调整C相
+                Ton3D=2*tC-Ton3U;
+                if(Ton2D>Tuplimit)
+                {
+                    Ton2D=Tuplimit;
+                }
+                if(Ton3D>Tuplimit)
+                {
+                    Ton3D=Tuplimit;
+                }
+                pm->foc.shunt_case = 6;
             }
          }
-        trig1=(Ton2U+Ton3U)/2;
-        trig2=(Ton2U+Ton1U)/2;
+        trig1=(Ton2U+Ton3U)/2+trigoff;
+        trig2=(Ton2U+Ton1U)/2+trigoff;
     } break;
     case 6:
     {
-        t1 = (int16_t)(-Y);
-        t2 = (int16_t)(-Z);
+        t1 = (int16_t)(-Y)+deadtime;
+        t2 = (int16_t)(-Z)+deadtime;
         tC = ( arr - t1 - t2) * 0.5f;
         tA = tC + t1;
         tB = tA + t2;
@@ -1031,46 +1059,48 @@ _RAM_FUNC void foc_single_shunt_schedule_update(pmsm_t *pm)
             {
                 Ton3U=Tdownlimit;
                 Ton3D=2*tC-Ton3U;
-                // Ton1U=Tmin;//调整A相
-                // Ton1D=2*tA-Ton1U;
-                // Ton2U=2*Tmin;//调整B相
-                // Ton2D=2*tB-Ton2U;
-                // if(Ton1D<Tdownlimit)
-                // {
-                //     Ton1D=Tdownlimit;
-                // }
-                // if(Ton2D<Tdownlimit)
-                // {
-                //     Ton2D=Tdownlimit;
-                // }
+                Ton1U=Tmin;//调整A相
+                Ton1D=2*tA-Ton1U;
+                Ton2U=2*Tmin;//调整B相
+                Ton2D=2*tB-Ton2U;
+                if(Ton1D<Tdownlimit)
+                {
+                    Ton1D=Tdownlimit;
+                }
+                if(Ton2D<Tdownlimit)
+                {
+                    Ton2D=Tdownlimit;
+                }
+                pm->foc.shunt_case = 5;
             }
             if(Ton2U>Tuplimit)
             {
                 Ton2U=Tuplimit;
                 Ton2D=2*tB-Ton2U;
-                // Ton1U=Tuplimit-Tmin;//调整A相
-                // Ton1D=2*tA-Ton1U;
-                // Ton3U=Tuplimit-2*Tmin;//调整C相
-                // Ton3D=2*tC-Ton3U;
-                // if(Ton1D>Tuplimit)
-                // {                 
-                //     Ton1D=Tuplimit;
-                // }             
-                // if(Ton3D>Tuplimit)
-                // {
-                //     Ton3D=Tuplimit;
-                // }   
+                Ton1U=Tuplimit-Tmin;//调整A相
+                Ton1D=2*tA-Ton1U;
+                Ton3U=Tuplimit-2*Tmin;//调整C相
+                Ton3D=2*tC-Ton3U;
+                if(Ton1D>Tuplimit)
+                {                 
+                    Ton1D=Tuplimit;
+                }             
+                if(Ton3D>Tuplimit)
+                {
+                    Ton3D=Tuplimit;
+                }   
+                pm->foc.shunt_case = 6;
             }
             
          }
-        trig1=(Ton3U+Ton1U)/2;
-        trig2=(Ton1U+Ton2U)/2;
+        trig1=(Ton3U+Ton1U)/2+trigoff;
+        trig2=(Ton1U+Ton2U)/2+trigoff;
     } break;
     case 2:
     default:
     {
-        int16_t t1 = (int16_t)(Y);
-        int16_t t2 = (int16_t)(-X);
+        int16_t t1 = (int16_t)(Y)+deadtime;
+        int16_t t2 = (int16_t)(-X)+deadtime;
         tA = (arr - t1 - t2) * 0.5f;
         tC = tA + t1;
         tB = tC + t2;
@@ -1141,39 +1171,41 @@ _RAM_FUNC void foc_single_shunt_schedule_update(pmsm_t *pm)
             {
                 Ton1U=Tdownlimit;
                 Ton1D=2*tA-Ton1U;
-                // Ton3U=Tmin;//调整C相
-                // Ton3D=2*tC-Ton3U;
-                // Ton2U=2*Tmin;//调整B相
-                // Ton2D=2*tB-Ton2U;
-                // if(Ton3D<Tdownlimit)
-                // {
-                //     Ton3D=Tdownlimit;
-                // }
-                // if(Ton2D<Tdownlimit)
-                // {
-                //     Ton2D=Tdownlimit;
-                // }
+                Ton3U=Tmin;//调整C相
+                Ton3D=2*tC-Ton3U;
+                Ton2U=2*Tmin;//调整B相
+                Ton2D=2*tB-Ton2U;
+                if(Ton3D<Tdownlimit)
+                {
+                    Ton3D=Tdownlimit;
+                }
+                if(Ton2D<Tdownlimit)
+                {
+                    Ton2D=Tdownlimit;
+                }
+                pm->foc.shunt_case = 5;
             }
             if(Ton2U>Tuplimit)
             {
                 Ton2U=Tuplimit;
                 Ton2D=2*tB-Ton2U;
-                // Ton3U=Tuplimit-Tmin;//调整A相
-                // Ton3D=2*tC-Ton3U;
-                // Ton1U=Tuplimit-2*Tmin;//调整C相
-                // Ton1D=2*tA-Ton1U;
-                // if(Ton1D>Tuplimit)
-                // {
-                //     Ton1D=Tuplimit;
-                // }
-                // if(Ton3D>Tuplimit)
-                // {                    
-                //     Ton3D=Tuplimit;
-                // }
+                Ton3U=Tuplimit-Tmin;//调整A相
+                Ton3D=2*tC-Ton3U;
+                Ton1U=Tuplimit-2*Tmin;//调整C相
+                Ton1D=2*tA-Ton1U;
+                if(Ton1D>Tuplimit)
+                {
+                    Ton1D=Tuplimit;
+                }
+                if(Ton3D>Tuplimit)
+                {                    
+                    Ton3D=Tuplimit;
+                }
+                pm->foc.shunt_case = 6;
             }
          }
-        trig1=(Ton1U+Ton3U)/2;
-        trig2=(Ton3U+Ton2U)/2;
+        trig1=(Ton1U+Ton3U)/2+trigoff;
+        trig2=(Ton3U+Ton2U)/2+trigoff;
     } break;
     }
 
@@ -1279,23 +1311,11 @@ _RAM_FUNC void foc_pwm_duty_set(pmsm_t *pm)
 }
 
 /* ================================================================
- *  S. SMO 滑模观测器 + PLL 锁相环 (含 LPF 相位补偿)
+ *  S. 滑模观测器 (SMO) + PLL
  *
- *  数据流:
- *   1. 滑模控制量  Zα/Zβ = Kslide · sat(i_err / E0)
- *   2. LPF 提取反电势  Eα/Eβ  (截止频率 Kslf rad/s)
- *   3. 相位补偿: 将 Eα/Eβ 超前旋转 φ=atan(ωe/Kslf) 抵消 LPF 的相位滞后
- *   4. PLL 误差(cross-product 归一化):
- *        err_n = (Eαc·cosθ̂ + Eβc·sinθ̂) / |Ec|  ≈ sin(θ̂ − θe)
- *   5. PI → ωe_pll → 积分 → θ̂
- *
- *  参数设计 (电机: pn=6, flux=0.0065 Wb, wr_max=30 rad/s)
- *    we_max   = wr_max × pn = 180 rad/s
- *    Kslide   ≈ 1.5 × we_max × flux ≈ 1.75 V → 取 2.0
- *    Kslf     ≈ 3 × we_max ≈ 540 rad/s        → 取 500
- *    E0       = 额定电流 × 20% ≈ 1.0 A
- *    PLL带宽  ωn = 300 rad/s, ζ = 0.707
- *      kp = 2ζωn ≈ 424,  ki = ωn² = 90000
+ *  固定增益 + 高速自适应:
+ *    Kslide = 3.0V (基础), E0 = 5.0A, Kslf = 150 rad/s
+ *    PLL: ωn=100, ζ=0.707 → kp=141, ki=10000
  * ================================================================ */
 void foc_smo_init(pmsm_t *pm)
 {
@@ -1310,101 +1330,157 @@ void foc_smo_init(pmsm_t *pm)
     pm->esmo.v_beta = &pm->foc.v_beta;
     pm->esmo.we     = &pm->foc.we;
 
-    /* Kslide: BEMF倍数因子 (kslide_eff = |we| * flux * Kslide)
-     *   需满足: BEMF_max < kslide_eff < (Vapplied_min - Rs*Ipeak)
-     *   实际: BEMF_max=1.17V, Kslide=1.2 → kslide_eff=1.40V @ we=180
-     *   Vapplied左右线快运行时: sqrt(1.57^2+0.3^2)=1.60V > 1.40V ✓ */
-    pm->esmo.Kslide = 1.2f;    /* BEMF倍数因子 (1.1~1.3合适) */
-    pm->esmo.Kslf   = 500.0f;
-    pm->esmo.E0     = 0.5f;    /* 边界层宽度 (A), 需 < 典型电流误差才能进入滑模 */
+    /* ── 参数 ──────────────────────────────────────────────
+     * 调参指南:
+     *   1. E0:     边界层宽度, 越大→离散稳定裕度越大
+     *              ks_max_stable = E0 × Ls / ts
+     *              本电机: E0=5 → ks_max ≈ 5.5V
+     *   2. Kslide: 固定基础增益(V), 需 > IF切换时 BEMF(≈0.4V)
+     *              高速时自适应为 1.5×BEMF, 不超过 ks_max
+     *   3. Kslf:   BEMF 提取 LPF 截止(rad/s), 小→干净但延迟大
+     *   4. PLL:    kp = 2·ζ·ωn, ki = ωn² (ζ=0.707)
+     * ────────────────────────────────────────────────────── */
+    pm->esmo.Kslide =10.0f;     /* 固定基础增益 (V) */
+    pm->esmo.Kslf   = 3000.0f;   /* LPF 截止频率 (rad/s) */
+    pm->esmo.E0     = 6.0f;     /* 边界层宽度 (A), 保证离散稳定 */
     pm->esmo.ts     = pm->period.foc_ts;
     pm->esmo.fs     = pm->period.foc_fs;
 
-    pm->esmo.pll_kp      = 424.0f;
-    pm->esmo.pll_ki      = 90000.0f;
+    pm->esmo.pll_kp      = 282.83f;   /* PLL: ωn=200, ζ=0.707 → kp=2×0.707×200 */
+    pm->esmo.pll_ki      = 40000.0f; /* ki = ωn² = 200² */
     pm->esmo.pll_err_int = 0.0f;
     pm->esmo.we_pll      = 0.0f;
 
     pm->esmo.we_est   = 0.0f;
+    pm->esmo.pos_e_raw = 0.0f;
     pm->esmo.pos_e    = 0.0f;
     pm->esmo.m_theta  = 0.0f;
     pm->esmo.EstIalph = 0.0f;
     pm->esmo.EstIbeta = 0.0f;
     pm->esmo.Ealph    = 0.0f;
     pm->esmo.Ebeta    = 0.0f;
+    pm->esmo.i_err_a  = 0.0f;
+    pm->esmo.i_err_b  = 0.0f;
 }
 
 _RAM_FUNC void foc_smo_run(pmsm_t *pm)
 {
-    const float ts = pm->esmo.ts;
-    const float ls = max(*pm->esmo.Ls, 1e-6f);
-    const float rs = *pm->esmo.Rs;
+    const float ts  = pm->esmo.ts;
+    const float ls  = *pm->esmo.Ls;
+    const float rs  = *pm->esmo.Rs;
+    const float flux_v = *pm->esmo.flux;
+    const float klf = pm->esmo.Kslf;     /* 固定 LPF 截止频率 */
 
-    /* ── 0. 自适应 Kslide: 随转速同步缩放 ─────────────────────────
-     *   原理: BEMF_max = |ωe| × flux, Kslide 需略大于 BEMF 才能保持滑模
-     *         低速时 BEMF≈0, 若 Kslide 取固定大值会导致 EstI 偏到
-     *         (Vapplied - Kslide)/Rs >> 额定电流, SMO 永久饱和.
-     *   IF 阶段用 we_set (已知命令速度); SMO 闭环用 we_pll.
-     *   Kslide_eff = max(1.5 × |ωe| × flux, Kslide_min=0.05V)        */
-    float we_eff = (pm->foc.run_stage < 2U)
-                    ? pm->ctrl.we_set
-                    : fabsf(pm->esmo.we_pll);
-    float kslide_eff = we_eff * (*pm->esmo.flux) * pm->esmo.Kslide;
-    if (kslide_eff < 0.3f) kslide_eff = 0.3f;
+    /* ── 0. 滑模增益计算 ────────────────────────────── */
+    /*   固定增益 Kslide 作为下限, 高速自适应增大           */
+    /*   !! 不再有 ks_max 限制: 半隐式积分无条件稳定 !!     */
+    float we_abs = fabsf(pm->esmo.we_pll);
+    float bemf_est = we_abs * flux_v;             /* 当前 BEMF 估算 */
+    float ks = pm->esmo.Kslide;                   /* 固定基础增益 */
+    if (1.5f * bemf_est > ks)                     /* 高速: 1.5倍BEMF */
+        ks = 1.5f * bemf_est;
+    /* 前向欧拉稳定上限 E0*Ls/ts ≈ 6V, 而高速BEMF = 22V
+     * 改用半隐式积分后无条件稳定, 不再 clamp ks */
+    pm->esmo.dbg_ks = ks;
 
-    /* ── 1. 电流估算误差 ─────────────────────────────────────────── */
-    float i_err_a = pm->foc.i_alph - pm->esmo.EstIalph;
-    float i_err_b = pm->foc.i_beta  - pm->esmo.EstIbeta;
+    /* ── 1-2-3. 半隐式(后向)欧拉观测器 (无条件稳定) ─── */
+    /*   前向欧拉: EstI += (V - Rs*EstI - Z)/Ls * ts      */
+    /*   当 Ks > Ls/ts (≈1.1V) 时前向欧拉不稳定           */
+    /*   改为隐式处理 Rs*EstI 和线性化 Z = (Ks/E0)*err:   */
+    /*     EstI_new = [EstI + (V + Kg*I)/Ls*ts]            */
+    /*              / [1 + (Rs + Kg)/Ls * ts]              */
+    /*   分母 > 1 恒成立 → 无条件稳定                      */
+    {
+        float Kg = ks / pm->esmo.E0;
+        float inv_denom = 1.0f / (1.0f + (rs + Kg) / ls * ts);
 
-    /* ── 2. 饱和函数 → 滑模控制量 ───────────────────────────────── */
+        pm->esmo.EstIalph = (pm->esmo.EstIalph
+            + (pm->foc.v_alph + Kg * pm->foc.i_alph) / ls * ts) * inv_denom;
+        pm->esmo.EstIbeta = (pm->esmo.EstIbeta
+            + (pm->foc.v_beta  + Kg * pm->foc.i_beta)  / ls * ts) * inv_denom;
+    }
+
+    /* 从更新后的 EstI 计算误差和 Z */
+    float i_err_a = pm->esmo.EstIalph - pm->foc.i_alph;
+    float i_err_b = pm->esmo.EstIbeta - pm->foc.i_beta;
+    pm->esmo.i_err_a = i_err_a;
+    pm->esmo.i_err_b = i_err_b;
+
     float sat_a = i_err_a / pm->esmo.E0;
     float sat_b = i_err_b / pm->esmo.E0;
     MIN_MAX_LIMT(sat_a, -1.0f, 1.0f);
     MIN_MAX_LIMT(sat_b, -1.0f, 1.0f);
-    pm->esmo.Zalph = kslide_eff * sat_a;
-    pm->esmo.Zbeta = kslide_eff * sat_b;
+    pm->esmo.Zalph = ks * sat_a;
+    pm->esmo.Zbeta = ks * sat_b;
 
-    /* ── 3. 估算电流积分 (前向欧拉) ──────────────────────────────── */
-    pm->esmo.EstIalph += ((pm->foc.v_alph - rs * pm->esmo.EstIalph - pm->esmo.Zalph) / ls) * ts;
-    pm->esmo.EstIbeta += ((pm->foc.v_beta  - rs * pm->esmo.EstIbeta  - pm->esmo.Zbeta)  / ls) * ts;
+    /* ── 4. 一阶 LPF 提取反电势 ─────────────────────── */
+    float a = klf * ts;
+    if (a > 1.0f) a = 1.0f;
+    pm->esmo.Ealph += (pm->esmo.Zalph - pm->esmo.Ealph) * a;
+    pm->esmo.Ebeta += (pm->esmo.Zbeta - pm->esmo.Ebeta) * a;
 
-    /* ── 4. LPF 提取反电势 ────────────────────────────────────────
-     *   H(s) = Kslf / (s + Kslf),  离散: E[k] = E[k-1] + (Z - E[k-1])·Kslf·ts */
-    pm->esmo.Ealph += (pm->esmo.Zalph - pm->esmo.Ealph) * pm->esmo.Kslf * ts;
-    pm->esmo.Ebeta += (pm->esmo.Zbeta  - pm->esmo.Ebeta)  * pm->esmo.Kslf * ts;
-
-    /* ── 5. LPF 相位补偿 ──────────────────────────────────────────
-     *   LPF 在 ωe 处的相位滞后: φ = atan(ωe / Kslf)
-     *   将 Eα/Eβ 逆时针旋转 φ (超前补偿):
-     *     Eαc = Eα·cosφ − Eβ·sinφ
-     *     Eβc = Eα·sinφ + Eβ·cosφ */
-    float comp    = atan2f(pm->esmo.we_pll, pm->esmo.Kslf);
-    float cos_c   = cosf(comp);
-    float sin_c   = sinf(comp);
+    /* ── 5. LPF 相位补偿 + 计算延迟补偿 ────────────── */
+    /*   补偿两部分:                                       */
+    /*   ① LPF 相位滞后: φ_lpf = atan(|ωe| / ωc)         */
+    /*   ② 计算/采样延迟: φ_delay = |ωe| × 1.5 × Ts      */
+    /*      (ADC采样→计算→PWM更新 ≈ 1.5 个 FOC 周期)       */
+    /*   总补偿角沿 ωe 旋转方向超前                         */
+    float we_comp = we_abs;
+    if (we_comp < 1.0f) we_comp = 1.0f;
+    float phi_lpf   = atanf(we_comp / klf);        /* LPF 滞后 */
+    float comp_total = phi_lpf ;          /* 总补偿角 */
+    float sign_we   = (pm->esmo.we_pll >= 0.0f) ? 1.0f : -1.0f;
+    float comp_angle = sign_we * comp_total;
+    float cos_c = cosf(comp_angle);
+    float sin_c = sinf(comp_angle);
     float Ealph_c = pm->esmo.Ealph * cos_c - pm->esmo.Ebeta * sin_c;
     float Ebeta_c = pm->esmo.Ealph * sin_c + pm->esmo.Ebeta * cos_c;
+    pm->esmo.dbg_Ea_comp  = Ealph_c;
+    pm->esmo.dbg_Eb_comp  = Ebeta_c;
+    pm->esmo.dbg_comp_deg = comp_angle * (180.0f / M_PI);
 
-    /* ── 6. PLL 误差计算 (cross-product, 归一化至 [-1,1]) ──────────
-     *   [Eαc, Eβc] = Emag·[−sinθe, cosθe]
-     *   cross = Eαc·cosθ̂ + Eβc·sinθ̂ = Emag·sin(θ̂ − θe)
-     *   取负号 → err = sin(θe − θ̂): θ̂ 滞后时 err>0 → we_pll 增大 → 收敛 */
-    float Emag    = sqrtf(Ealph_c * Ealph_c + Ebeta_c * Ebeta_c);
-    float cos_pe  = cosf(pm->esmo.pos_e);
-    float sin_pe  = sinf(pm->esmo.pos_e);
+    /* ── 5b. atan2 参考角度 (仅调试, 不用于控制) ─────── */
+    /*   θe = atan2(-Eα_c, Eβ_c), 因 BEMF 超前磁链 90°   */
+    float theta_atan = atan2f(-Ealph_c, Ebeta_c);
+    if (theta_atan < 0.0f) theta_atan += M_2PI;
+    pm->esmo.dbg_theta_atan = theta_atan;
+
+    /* ── 6. PLL 误差 (归一化 cross-product) ──────────── */
+    /*   err = -(Eα_c·cosθ̂ + Eβ_c·sinθ̂) / |E|            */
+    /*       = sin(θe - θ̂), θe>θ̂ → err>0 → PLL 加速 ✓    */
+    float Emag   = sqrtf(Ealph_c * Ealph_c + Ebeta_c * Ebeta_c);
+    pm->esmo.dbg_Emag = Emag;
+    float cos_pe = cosf(pm->esmo.pos_e_raw);
+    float sin_pe = sinf(pm->esmo.pos_e_raw);
     float err_raw = Ealph_c * cos_pe + Ebeta_c * sin_pe;
     float err_n   = (Emag > 0.01f) ? (-err_raw / Emag) : 0.0f;
+    pm->esmo.dbg_pll_err = err_n;
 
-    /* ── 7. PLL PI 调节器 → ωe_pll ──────────────────────────────── */
+    /* ── 7. PLL PI → ωe ─────────────────────────────── */
     pm->esmo.pll_err_int += pm->esmo.pll_ki * err_n * ts;
     MIN_MAX_LIMT(pm->esmo.pll_err_int, -3000.0f, 3000.0f);
     pm->esmo.we_pll = pm->esmo.pll_kp * err_n + pm->esmo.pll_err_int;
 
-    /* ── 8. 积分得到角度 θ̂ ──────────────────────────────────────── */
-    pm->esmo.pos_e += pm->esmo.we_pll * ts;
+    /* ── 8. 角度积分 ────────────────────────────────── */
+    pm->esmo.pos_e_raw += pm->esmo.we_pll * ts;
+    wrap_0_2pi(pm->esmo.pos_e_raw);
+
+    /* 输出角做与反电势一致的超前补偿，供 Park/控制环使用 */
+    pm->esmo.pos_e = pm->esmo.pos_e_raw;// + comp_angle;
     wrap_0_2pi(pm->esmo.pos_e);
 
-    /* ── 9. 写回 foc 结构体 ───────────────────────────────────────── */
+    /* ── 8b. IF 阶段: 锁定 PLL 到 IF 角度/速度 ────────── */
+    /*   观测器(步骤1-4)自由运行, PLL 输出强制同步          */
+    /*   VOFA+ 对比 dbg_theta_atan 与 drag_pe 判断收敛     */
+    // if (pm->foc.run_stage < 2U) {
+    //     pm->esmo.pos_e       = pm->ctrl.drag_pe;
+    //     pm->esmo.we_pll      = pm->ctrl.we_set;
+    //     pm->esmo.pll_err_int = pm->ctrl.we_set;
+    // }
+
+    /* ── 9. 写回 foc 结构体 ─────────────────────────── */
     pm->esmo.we_est = pm->esmo.we_pll;
+    /* 控制角统一使用 PLL 积分角 + 单次补偿后的 pos_e，避免重复补偿导致角度超前。 */
     pm->foc.p_e     = pm->esmo.pos_e;
     pm->foc.we      = pm->esmo.we_pll;
     pm->foc.wr      = pm->esmo.we_pll * pm->para.div_pn;
@@ -1427,8 +1503,10 @@ _RAM_FUNC void foc_tim1_update_isr(pmsm_t *pm)
         /* --- 1. 读取 ADC, 重构三相电流 --- */
         pm->adc.vbus = ADC2->JDR1;//读母线电压值
 
-        float i_s1 = (pm->foc.i_shunt_raw_1 - pm->adc.ia_off) * pm->board.i_ratio;
-        float i_s2 = (pm->foc.i_shunt_raw_2 - pm->adc.ib_off) * pm->board.i_ratio;
+        float i_s1 = (pm->foc.i_shunt_raw_1 - pm->adc.ia_off ) ;
+        float i_s2 = (pm->foc.i_shunt_raw_2 - pm->adc.ia_off);
+        // float i_s1 = (pm->foc.i_shunt_raw_1 - pm->adc.ia_off) ;
+        // float i_s2 = (pm->foc.i_shunt_raw_2 - pm->adc.ia_off);
         pm->foc.i_shunt_1 = i_s1;
         pm->foc.i_shunt_2 = i_s2;
         foc_reconstruct_current(pm, i_s1, i_s2);
@@ -1455,13 +1533,6 @@ _RAM_FUNC void foc_tim1_update_isr(pmsm_t *pm)
         foc_smo_run(pm);
 
         /* --- 5. 角度 + 电流参考: IF开环 / SMO闭环 --- */
-        /*   对齐阶段 0~IF_ALIGN: theta固定=0, 让转子锁到d轴
-         *   爬速阶段 IF_ALIGN~IF_TOTAL: we从IF_WE_MIN线性增到目标
-         *   闭环阶段 >= IF_TOTAL: SMO角度, 速度PI给iq */
-        #define IF_ALIGN_CNT  1000U   /* 0.5s 对齐 */
-        #define IF_TOTAL_CNT  100000U   /* 1.5s IF总时长 */
-        #define IF_WE_MIN     0.0f    /* 起始电角速度 rad/s */
-
         float theta, id_ref, iq_ref;
         if (pm->period.start_cnt < IF_TOTAL_CNT)
         {
@@ -1483,8 +1554,21 @@ _RAM_FUNC void foc_tim1_update_isr(pmsm_t *pm)
             }
             else
             {
+                /* 对齐→爬速过渡: 重置SMO内部状态
+                 * 对齐阶段d轴电流导致α轴观测器/LPF锁死在饱和值,
+                 * 必须在此清零, 否则Ealph将长期保持为常数 */
+                if (pm->period.start_cnt == IF_ALIGN_CNT + 1U)
+                {
+                    pm->esmo.EstIalph = pm->foc.i_alph;
+                    pm->esmo.EstIbeta = pm->foc.i_beta;
+                    pm->esmo.Ealph    = 0.0f;
+                    pm->esmo.Ebeta    = 0.0f;
+                    pm->esmo.Zalph    = 0.0f;
+                    pm->esmo.Zbeta    = 0.0f;
+                }
+
                 /* ---- 爬速阶段: 线性加速 + q轴拖动电流 iq_if ---- */
-                float we_target = max(15 * pm->para.pn, IF_WE_MIN);
+                float we_target = max(30 * pm->para.pn, IF_WE_MIN);  /* 提高切换转速: 30rad/s机械→180rad/s电角速 */
                 float ramp_k = (float)(pm->period.start_cnt - IF_ALIGN_CNT)
                              / (float)(IF_TOTAL_CNT - IF_ALIGN_CNT);
                 pm->ctrl.we_set = IF_WE_MIN + (we_target - IF_WE_MIN) * ramp_k;
@@ -1492,35 +1576,15 @@ _RAM_FUNC void foc_tim1_update_isr(pmsm_t *pm)
                 pm->ctrl.drag_pe += pm->ctrl.we_set * pm->period.foc_ts;
                 wrap_0_2pi(pm->ctrl.drag_pe);
                 theta  = pm->ctrl.drag_pe;
-                id_ref =0;   /* d轴维持励磁 */
-                iq_ref = pm->ctrl.iq_if;   /* q轴固定拖动电流 */
+                id_ref = 3;  /* d轴维持励磁 */
+                iq_ref = 0 ;  /* q轴固定拖动电流 */
+
             }
 
             /* 切换前一拍: 同步 SMO/PLL 状态, 清 PI 积分 */
             if (pm->period.start_cnt == IF_TOTAL_CNT - 1U)
             {
-                float we_sync  = pm->ctrl.we_set;
-                float theta_sw = pm->ctrl.drag_pe;
-                float flux_val = *pm->esmo.flux;
 
-                /* PLL 角度/速度同步 */
-                pm->esmo.pos_e       = theta_sw;
-                pm->esmo.m_theta     = theta_sw;
-                pm->esmo.we_est      = we_sync;
-                pm->esmo.we_pll      = we_sync;
-                pm->esmo.pll_err_int = we_sync;  /* 稳态 err=0 时积分项维持速度 */
-
-                /* SMO 状态复位: 消除开环期间 LPF/观测器积累的错误历史
-                 *   EstI → 赋实际电流, 使 i_err=0, sat=0, Z=0 (平滑过渡)
-                 *   Ealph/Ebeta → 理论 BEMF 初值, 避免 LPF 从错误值收敛 */
-                pm->esmo.EstIalph = pm->foc.i_alph;
-                pm->esmo.EstIbeta = pm->foc.i_beta;
-                pm->esmo.Ealph    = -we_sync * flux_val * sinf(theta_sw);
-                pm->esmo.Ebeta    =  we_sync * flux_val * cosf(theta_sw);
-
-                pm->spd_pi.i_term = 0.0f;
-                pm->id_pi.i_term  = 0.0f;
-                pm->iq_pi.i_term  = 0.0f;
             }
             
         }
@@ -1528,7 +1592,7 @@ _RAM_FUNC void foc_tim1_update_isr(pmsm_t *pm)
         {
             /* SMO 闭环: id=0, iq=速度环输出 */
             pm->foc.run_stage = 2;   /* 闭环 */
-            theta  = pm->esmo.pos_e;
+            theta  = pm->foc.p_e;
             id_ref = 0.0f;
             iq_ref = pm->ctrl.iq_set;//速度环输出传入
         }
@@ -1538,8 +1602,14 @@ _RAM_FUNC void foc_tim1_update_isr(pmsm_t *pm)
         wrap_0_2pi(pm->foc.theta);
         pm->foc.sin_val = sinf(pm->foc.theta);
         pm->foc.cos_val = cosf(pm->foc.theta);
-        pm->foc.i_d =  pm->foc.i_alph * pm->foc.cos_val + pm->foc.i_beta * pm->foc.sin_val;
-        pm->foc.i_q =  pm->foc.i_beta * pm->foc.cos_val - pm->foc.i_alph * pm->foc.sin_val;
+        {
+            /* 默认使用当前控制角(theta)的电流反馈 */
+            float id_fb = pm->foc.i_alph * pm->foc.cos_val + pm->foc.i_beta * pm->foc.sin_val;
+            float iq_fb = pm->foc.i_beta * pm->foc.cos_val - pm->foc.i_alph * pm->foc.sin_val;
+
+            pm->foc.i_d = id_fb;
+            pm->foc.i_q = iq_fb;
+        }
 
         /* --- 7. d/q 轴电流 PI (IF阶段与闭环阶段统一用PI) ---
          *   IF对齐:  id_ref=id_if, iq_ref=0
@@ -1549,11 +1619,13 @@ _RAM_FUNC void foc_tim1_update_isr(pmsm_t *pm)
         float vd, vq;
         /* IF阶段与闭环阶段均使用电流PI, 保证 v_alph/v_beta 真实反映施加电压
          * 这样SMO积分器能正确收敛 (若用固定vq_set且vq_set<Kslide会导致SMO饱和死锁) */
-        MIN_MAX_LIMT(iq_ref, -pm->ctrl.iq_lim, pm->ctrl.iq_lim);
-        vd = 0;  /* d轴电压参考固定为0, 仅用于锁定和维持磁场 */
-        vq = foc_pi_run(&pm->iq_pi, iq_ref, pm->foc.i_q);
-    
 
+        MIN_MAX_LIMT(iq_ref, -pm->ctrl.iq_lim, pm->ctrl.iq_lim);
+        
+       
+
+        vd = foc_pi_run(&pm->id_pi, id_ref, pm->foc.i_d);
+        vq = foc_pi_run(&pm->iq_pi, iq_ref, pm->foc.i_q); 
         /* 电压圆限幅: 保证 √(vd²+vq²) ≤ vs = vbus/√3 × 0.96
          *   vs 是 SVPWM 六边形内切圆半径, 限幅到此范围
          *   确保在任意电角度下都不会过调制
@@ -1603,11 +1675,14 @@ _RAM_FUNC void foc_tim1_update_isr(pmsm_t *pm)
  * ================================================================ */
 void foc_spd_pi_calc(pmsm_t *pm)
 {
-    if (pm->period.start_cnt < 30000U)
+    /* 仅在进入SMO闭环后运行速度环 */
+    if (pm->period.start_cnt < IF_TOTAL_CNT)
         return;
 
     pm->spd_pi.i_term_max =  pm->ctrl.iq_lim;
     pm->spd_pi.i_term_min = -pm->ctrl.iq_lim;
+
+    /* 速度反馈低通, 抑制SMO瞬时抖动直接注入速度PI */
 
     float wr_fb  = pm->foc.wr;
     float iq_ref = foc_pi_run(&pm->spd_pi, pm->ctrl.wr_set, wr_fb);
