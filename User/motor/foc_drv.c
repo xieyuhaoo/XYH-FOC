@@ -98,7 +98,7 @@
 
 /* IF开环到SMO闭环切换参数 */
 #define IF_ALIGN_CNT  500U
-#define IF_TOTAL_CNT  10000U
+#define IF_TOTAL_CNT  1000000U
 #define IF_WE_MIN     0.0f
 
 /* ======================== 全局实例 ======================== */
@@ -149,7 +149,7 @@ void pmsm_board_init(void)
     pm.board.v_ref = 3.3f;
     pm.board.v_adc = 4096.0f;
 
-    pm.board.i_res = 0.005f;      /* 采样电阻 5 mΩ */
+    pm.board.i_res = 0.001f;      /* 采样电阻 5 mΩ */
     pm.board.i_op  = 20.0f;       /* 运放增益 20x */
 
     pm.board.v1_res = 20000.0f;   /* 母线分压上桥 20kΩ */
@@ -1568,7 +1568,7 @@ _RAM_FUNC void foc_tim1_update_isr(pmsm_t *pm)
                 }
 
                 /* ---- 爬速阶段: 线性加速 + q轴拖动电流 iq_if ---- */
-                float we_target = max(30 * pm->para.pn, IF_WE_MIN);  /* 提高切换转速: 30rad/s机械→180rad/s电角速 */
+                float we_target = max(100 * pm->para.pn, IF_WE_MIN);  /* 提高切换转速: 30rad/s机械→180rad/s电角速 */
                 float ramp_k = (float)(pm->period.start_cnt - IF_ALIGN_CNT)
                              / (float)(IF_TOTAL_CNT - IF_ALIGN_CNT);
                 pm->ctrl.we_set = IF_WE_MIN + (we_target - IF_WE_MIN) * ramp_k;

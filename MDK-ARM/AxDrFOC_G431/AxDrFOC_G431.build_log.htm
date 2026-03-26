@@ -30,17 +30,19 @@ Build target 'AxDrFOC_G431'
 compiling foc_drv.c...
 ..\User\motor\foc_drv.c(486): warning:  #177-D: variable "Tmindiv2"  was declared but never referenced
       const int16_t Tmindiv2    = (int16_t)(0.5f * Tmin);
+..\User\motor\foc_drv.c(1536): warning:  #550-D: variable "id_ref"  was set but never used
+          float theta, id_ref, iq_ref;
 ..\User\motor\foc_drv.c(110): warning:  #177-D: function "foc_clamp_f32"  was declared but never referenced
   static float foc_clamp_f32(float in, float low, float high)
 ..\User\motor\foc_drv.c(117): warning:  #177-D: function "foc_clamp_u16"  was declared but never referenced
   static uint16_t foc_clamp_u16(int32_t val, uint16_t low, uint16_t high)
 ..\User\motor\foc_drv.c(124): warning:  #177-D: function "foc_clamp_i32"  was declared but never referenced
   static int32_t foc_clamp_i32(int32_t val, int32_t low, int32_t high)
-..\User\motor\foc_drv.c: 4 warnings, 0 errors
+..\User\motor\foc_drv.c: 5 warnings, 0 errors
 linking...
-Program Size: Code=42624 RO-data=600 RW-data=416 ZI-data=8296  
+Program Size: Code=42536 RO-data=600 RW-data=416 ZI-data=8296  
 FromELF: creating hex file...
-"AxDrFOC_G431\AxDrFOC_G431.axf" - 0 Error(s), 4 Warning(s).
+"AxDrFOC_G431\AxDrFOC_G431.axf" - 0 Error(s), 5 Warning(s).
 
 <h2>Software Packages used:</h2>
 
@@ -63,7 +65,7 @@ Package Vendor: Keil
 
    * Component: ARM::CMSIS:CORE@5.6.0
       Include file:  CMSIS/Core/Include/tz_context.h
-Build Time Elapsed:  00:00:02
+Build Time Elapsed:  00:00:03
 </pre>
 </body>
 </html>
